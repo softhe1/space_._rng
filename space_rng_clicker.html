@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Space RNG Clicker</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: black;
+      color: white;
+      text-align: center;
+      overflow-y: auto;
+    }
+    canvas#stars {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -2;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: url('https://cdn.pixabay.com/photo/2011/12/14/12/11/space-11099_1280.jpg') no-repeat center center;
+      background-size: cover;
+      opacity: 0.3;
+      z-index: -1;
+    }
+    h1 {
+      font-size: 2.5em;
+      margin: 1rem 0;
+      text-shadow: 0 0 10px white;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 1em;
+      background: #222;
+      color: white;
+      border: 1px solid #555;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #444;
+    }
+    .tab-buttons {
+      margin-bottom: 10px;
+    }
+    .section {
+      margin: 1rem auto;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.6);
+      max-width: 800px;
+      border-radius: 10px;
+    }
+    .hidden {
+      display: none;
+    }
+    .item {
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid #666;
+      border-radius: 6px;
+    }
+    .item button {
+      font-size: 0.8em;
+      padding: 4px 10px;
+      margin-left: 10px;
+      background: #333;
+      border: 1px solid #777;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .item button:hover {
+      background: #555;
+    }
+    .common { color: #aaa; }
+    .uncommon { color: #4caf50; }
+    .rare { color: #2196f3; }
+    .epic { color: #b26ae6; }
+    .legendary { color: #f44336; font-weight: bold; text-shadow: 0 0 5px #f44336aa; }
+    .exotic {
+      background: linear-gradient(90deg, red, orange, yellow, green, blue, indigo, violet);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: bold;
+      text-shadow: 0 0 3px white;
+    }
+    .collection-board {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .collection-item {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #444;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stars"></canvas>
+  <h1>🌌 Space RNG Clicker</h1>
+  <p><strong>Wallet:</strong> <span id="wallet">0</span> coins</p>
+  <p><strong>Luck Multiplier:</strong> x<span id="luckDisplay">1</span></p>
+  <div class="tab-buttons">
+    <button onclick="roll()">🎲 Roll</button>
+    <button onclick="toggleTab('inventory')">🎒 Inventory</button>
+    <button onclick="toggleTab('shop')">🛒 Shop</button>
+    <button onclick="toggleTab('collection')">📚 Collection</button>
+  </div>
+  <div class="section" id="resultArea">
+    <h2 id="result">Roll to discover a space item!</h2>
+    <p id="rarityText"></p>
+  </div>
+  <div class="section hidden" id="inventory">
+    <h2>Inventory</h2>
+    <div id="inventoryItems"></div>
+    <button onclick="sellAll()">Auto Sell (Excludes Favorites)</button>
+  </div>
+  <div class="section hidden" id="shop">
+    <h2>Shop - Luck Boosters</h2>
+    <div id="shopItems"></div>
+  </div>
+  <div class="section hidden" id="collection">
+    <h2>Collection</h2>
+    <div id="collectionBoard" class="collection-board"></div>
+  </div>
+
+<script>
+let wallet = 0;
+let luckMultiplier = 1;
+let inventory = [];
+let collectionSet = new Set();
+let rollCooldown = false;
+
+const shopItems = [
+  { name: "Nova Magnet", cost: 1000, multiplier: 2 },
+  { name: "Comet Lens", cost: 5000, multiplier: 4 },
+  { name: "Quantum Scope", cost: 10000, multiplier: 8 },
+  { name: "Dark Matter Coil", cost: 25000, multiplier: 15 },
+  { name: "Wormhole Stabilizer", cost: 50000, multiplier: 30 },
+  { name: "Celestial Amplifier", cost: 100000, multiplier: 50 }
+];
+
+const outcomes = [
+  // COMMON (15)
+  { text: "💫 Star Fragment", weight: 40, rarity: "common", value: 10 },
+  { text: "🪐 Asteroid Rock", weight: 45, rarity: "common", value: 9 },
+  { text: "🛸 Alien Artifact", weight: 48, rarity: "common", value: 8 },
+  { text: "🚀 Space Dust", weight: 50, rarity: "common", value: 6 },
+  { text: "🪐 Space Crystal", weight: 50, rarity: "common", value: 6 },
+  { text: "🌙 Lunar Rock", weight: 55, rarity: "common", value: 5 },
+  { text: "🧪 Alien Slime", weight: 40, rarity: "common", value: 8 },
+  { text: "📡 Broken Antenna", weight: 38, rarity: "common", value: 7 },
+  { text: "🔧 Scrap Metal", weight: 42, rarity: "common", value: 6 },
+  { text: "🧲 Space Magnet", weight: 45, rarity: "common", value: 7 },
+  { text: "📀 Data Disk", weight: 44, rarity: "common", value: 8 },
+  { text: "🌍 Earth Soil Sample", weight: 41, rarity: "common", value: 9 },
+  { text: "🔋 Old Battery", weight: 43, rarity: "common", value: 6 },
+  { text: "🪞 Mirror Shard", weight: 46, rarity: "common", value: 5 },
+  { text: "🛢️ Fuel Canister", weight: 39, rarity: "common", value: 7 },
+
+  // UNCOMMON (15)
+  { text: "✨ Supernova Fragment", weight: 20, rarity: "uncommon", value: 20 },
+  { text: "🛸 UFO Piece", weight: 20, rarity: "uncommon", value: 22 },
+  { text: "🚀 Solar Flare", weight: 25, rarity: "uncommon", value: 23 },
+  { text: "🌌 Cosmic Dust", weight: 25, rarity: "uncommon", value: 21 },
+  { text: "🪐 Nebula Core", weight: 30, rarity: "uncommon", value: 24 },
+  { text: "🌠 Meteorite Chunk", weight: 35, rarity: "uncommon", value: 25 },
+  { text: "🌌 Nebula Shard", weight: 50, rarity: "uncommon", value: 27 },
+  { text: "🪐 Galactic Dust", weight: 55, rarity: "uncommon", value: 28 },
+  { text: "🌟 Stellar Gem", weight: 60, rarity: "uncommon", value: 30 },
+  { text: "🔮 Dimensional Chip", weight: 30, rarity: "uncommon", value: 26 },
+  { text: "🛰️ Drone Shell", weight: 32, rarity: "uncommon", value: 25 },
+  { text: "🔦 Plasma Torch", weight: 33, rarity: "uncommon", value: 27 },
+  { text: "💾 Memory Core", weight: 34, rarity: "uncommon", value: 28 },
+  { text: "🌌 Ion Sphere", weight: 36, rarity: "uncommon", value: 29 },
+  { text: "🛡️ Shield Generator", weight: 37, rarity: "uncommon", value: 30 },
+
+  // RARE (15)
+  { text: "🚀 Quantum Stone", weight: 10, rarity: "rare", value: 40 },
+  { text: "🛸 Galactic Core", weight: 12, rarity: "rare", value: 42 },
+  { text: "🪐 Alien Artifact", weight: 13, rarity: "rare", value: 43 },
+  { text: "🌌 Pulsar Gem", weight: 15, rarity: "rare", value: 44 },
+  { text: "🌠 Cosmic Gem", weight: 18, rarity: "rare", value: 45 },
+  { text: "🌕 Lunar Dust", weight: 22, rarity: "rare", value: 46 },
+  { text: "🚀 Supernova Core", weight: 30, rarity: "rare", value: 47 },
+  { text: "📘 Space Codex", weight: 14, rarity: "rare", value: 48 },
+  { text: "📦 Mysterious Crate", weight: 13, rarity: "rare", value: 49 },
+  { text: "🔭 Star Map", weight: 12, rarity: "rare", value: 50 },
+  { text: "🎛️ Flux Regulator", weight: 11, rarity: "rare", value: 51 },
+  { text: "⚛️ Antimatter Capsule", weight: 10, rarity: "rare", value: 52 },
+  { text: "📡 Deep Space Scanner", weight: 9, rarity: "rare", value: 53 },
+  { text: "🧬 Bio Sample", weight: 8, rarity: "rare", value: 54 },
+  { text: "🎲 Chance Module", weight: 7, rarity: "rare", value: 55 },
+
+  // EPIC (15)
+  { text: "🪐 Space Gem", weight: 15, rarity: "epic", value: 60 },
+  { text: "🪐 Pulsar Core", weight: 17, rarity: "epic", value: 62 },
+  { text: "🌟 Solar Fragment", weight: 18, rarity: "epic", value: 64 },
+  { text: "🌌 Nebula Shard", weight: 20, rarity: "epic", value: 66 },
+  { text: "🚀 Solar Flare", weight: 25, rarity: "epic", value: 68 },
+  { text: "🌈 Prismatic Lens", weight: 13, rarity: "epic", value: 70 },
+  { text: "🌀 Graviton Ring", weight: 12, rarity: "epic", value: 72 },
+  { text: "⛓️ Gravity Anchor", weight: 14, rarity: "epic", value: 74 },
+  { text: "🧠 Alien Neural Net", weight: 11, rarity: "epic", value: 75 },
+  { text: "🚨 Distress Beacon", weight: 10, rarity: "epic", value: 76 },
+  { text: "💡 Darklight Module", weight: 9, rarity: "epic", value: 78 },
+  { text: "📿 Time Relic", weight: 8, rarity: "epic", value: 80 },
+  { text: "💽 Wormhole Disk", weight: 7, rarity: "epic", value: 82 },
+  { text: "⚙️ Hypercoil Engine", weight: 6, rarity: "epic", value: 84 },
+  { text: "🌌 Cosmic Encoder", weight: 5, rarity: "epic", value: 86 },
+
+  // LEGENDARY (8)
+  { text: "🌟 Astral Diamond", weight: 1, rarity: "legendary", value: 100 },
+  { text: "🪐 Black Hole Relic", weight: 2, rarity: "legendary", value: 120 },
+  { text: "👑 Galactic Crown", weight: 3, rarity: "legendary", value: 150 },
+  { text: "🧿 Eternity Eye", weight: 1.5, rarity: "legendary", value: 170 },
+  { text: "🎠 Cosmic Carousel", weight: 1.2, rarity: "legendary", value: 180 },
+  { text: "🗝️ Star Key", weight: 1.1, rarity: "legendary", value: 190 },
+  { text: "🌌 Infinite Scroll", weight: 1.3, rarity: "legendary", value: 160 },
+  { text: "🎁 Artifact Cube", weight: 1.4, rarity: "legendary", value: 175 },
+
+  // EXOTIC (5)
+  { text: "🪐 Nebula Orb", weight: 0.3, rarity: "exotic", value: 200 },
+  { text: "💎 Chromatic Gemstone", weight: 0.5, rarity: "exotic", value: 250 },
+  { text: "🎇 Aurora Spark", weight: 0.2, rarity: "exotic", value: 300 },
+  { text: "📿 Relic of Eons", weight: 0.25, rarity: "exotic", value: 320 },
+  { text: "📡 Signal from Beyond", weight: 0.1, rarity: "exotic", value: 350 }
+];
+
+let purchasedLuckItems = {};
+
+function saveGame() {
+  const saveData = {
+    wallet,
+    luckMultiplier,
+    inventory,
+    collection: Array.from(collectionSet),
+    purchasedLuckItems
+  };
+  localStorage.setItem("spaceClickerSave", JSON.stringify(saveData));
+}
+
+function loadGame() {
+  const data = localStorage.getItem("spaceClickerSave");
+  if (data) {
+    try {
+      const save = JSON.parse(data);
+      wallet = save.wallet ?? 0;
+      luckMultiplier = save.luckMultiplier ?? 1;
+      inventory = save.inventory ?? [];
+      collectionSet = new Set(save.collection ?? []);
+      purchasedLuckItems = save.purchasedLuckItems ?? {};
+      updateLuckMultiplierFromPurchases();
+    } catch (e) {
+      console.error("Failed to load save data", e);
+    }
+  }
+}
+
+function updateLuckMultiplierFromPurchases() {
+  luckMultiplier = 1; // reset base multiplier
+  for (let i = 0; i < shopItems.length; i++) {
+    if (purchasedLuckItems[i]) {
+      luckMultiplier += shopItems[i].multiplier;
+    }
+  }
+  document.getElementById('luckDisplay').textContent = luckMultiplier;
+}
+
+function roll() {
+  if (rollCooldown) return;
+  rollCooldown = true;
+
+  // Weighted random selection
+  const totalWeight = outcomes.reduce((acc, item) => acc + item.weight, 0);
+  let rollValue = Math.random() * totalWeight;
+
+  let selectedItem;
+  for (const item of outcomes) {
+    rollValue -= item.weight;
+    if (rollValue <= 0) {
+      selectedItem = item;
+      break;
+    }
+  }
+  if (!selectedItem) selectedItem = outcomes[0];
+
+  // Apply luck multiplier (simple model: higher luck shifts odds slightly)
+  const luckBoost = Math.min(luckMultiplier / 10, 1); // max 1
+  if (Math.random() < luckBoost) {
+    // pick a rarer item (if possible)
+    let rarities = ["common", "uncommon", "rare", "epic", "legendary", "exotic"];
+    let currentRarityIndex = rarities.indexOf(selectedItem.rarity);
+    if (currentRarityIndex < rarities.length - 1) {
+      // pick a random item from next rarer tier
+      const higherRarityItems = outcomes.filter(o => rarities.indexOf(o.rarity) === currentRarityIndex + 1);
+      if (higherRarityItems.length > 0) {
+        selectedItem = higherRarityItems[Math.floor(Math.random() * higherRarityItems.length)];
+      }
+    }
+  }
+
+  wallet += selectedItem.value;
+  inventory.push({ ...selectedItem, favorite: false });
+  collectionSet.add(selectedItem.text);
+
+  document.getElementById("wallet").textContent = wallet;
+  const resultArea = document.getElementById("result");
+  resultArea.textContent = `You found a ${selectedItem.text}! (+${selectedItem.value} coins)`;
+  const rarityText = document.getElementById("rarityText");
+  rarityText.textContent = `Rarity: ${selectedItem.rarity.toUpperCase()}`;
+  rarityText.className = selectedItem.rarity;
+
+  updateInventory();
+  updateCollection();
+  saveGame();
+
+  setTimeout(() => {
+    rollCooldown = false;
+  }, 1000);
+}
+
+function updateInventory() {
+  const inventoryDiv = document.getElementById("inventoryItems");
+  inventoryDiv.innerHTML = "";
+  inventory.forEach((item, index) => {
+    const itemDiv = document.createElement("div");
+    itemDiv.className = "item " + item.rarity;
+    itemDiv.textContent = `${item.text} (Value: ${item.value} coins)`;
+
+    // Favorite toggle
+    const favButton = document.createElement("button");
+    favButton.textContent = item.favorite ? "★ Favorite" : "☆ Favorite";
+    favButton.onclick = () => {
+      item.favorite = !item.favorite;
+      favButton.textContent = item.favorite ? "★ Favorite" : "☆ Favorite";
+      saveGame();
+    };
+    itemDiv.appendChild(favButton);
+
+    // Sell button for individual item
+    const sellButton = document.createElement("button");
+    sellButton.textContent = "Sell";
+    sellButton.onclick = () => {
+      if (!item.favorite) {
+        wallet += item.value;
+        inventory.splice(index, 1);
+        updateInventory();
+        document.getElementById("wallet").textContent = wallet;
+        saveGame();
+      } else {
+        alert("You cannot sell a favorite item!");
+      }
+    };
+    itemDiv.appendChild(sellButton);
+
+    inventoryDiv.appendChild(itemDiv);
+  });
+}
+
+function sellAll() {
+  let soldValue = 0;
+  inventory = inventory.filter(item => {
+    if (!item.favorite) {
+      soldValue += item.value;
+      return false;
+    }
+    return true;
+  });
+  wallet += soldValue;
+  document.getElementById("wallet").textContent = wallet;
+  updateInventory();
+  saveGame();
+}
+
+function updateCollection() {
+  const collectionDiv = document.getElementById("collectionBoard");
+  collectionDiv.innerHTML = "";
+  const allTexts = [...new Set(outcomes.map(o => o.text))];
+
+  allTexts.forEach(text => {
+    const found = collectionSet.has(text);
+    const colItem = document.createElement("div");
+    colItem.className = "collection-item";
+    colItem.textContent = found ? text : "???";
+    if (found) {
+      const rarity = outcomes.find(o => o.text === text).rarity;
+      colItem.classList.add(rarity);
+    } else {
+      colItem.style.color = "#555";
+    }
+    collectionDiv.appendChild(colItem);
+  });
+}
+
+function toggleTab(tab) {
+  const sections = ["inventory", "shop", "collection"];
+  sections.forEach(s => {
+    document.getElementById(s).classList.toggle("hidden", s !== tab);
+  });
+}
+
+function renderShop() {
+  const shopDiv = document.getElementById("shopItems");
+  shopDiv.innerHTML = "";
+  shopItems.forEach((item, index) => {
+    const itemDiv = document.createElement("div");
+    itemDiv.className = "item";
+    itemDiv.textContent = `${item.name} - Cost: ${item.cost} coins - Luck +${item.multiplier}`;
+
+    const buyButton = document.createElement("button");
+    buyButton.textContent = purchasedLuckItems[index] ? "Purchased" : "Buy";
+    buyButton.disabled = purchasedLuckItems[index];
+    buyButton.onclick = () => {
+      if (wallet >= item.cost && !purchasedLuckItems[index]) {
+        wallet -= item.cost;
+        purchasedLuckItems[index] = true;
+        updateLuckMultiplierFromPurchases();
+        document.getElementById("wallet").textContent = wallet;
+        renderShop();
+        saveGame();
+      } else if (purchasedLuckItems[index]) {
+        alert("You already purchased this item.");
+      } else {
+        alert("Not enough coins!");
+      }
+    };
+    itemDiv.appendChild(buyButton);
+
+    shopDiv.appendChild(itemDiv);
+  });
+}
+
+// Starfield canvas background
+const canvas = document.getElementById("stars");
+const ctx = canvas.getContext("2d");
+let stars = [];
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      radius: Math.random() * 1.5,
+      speed: Math.random() * 0.5 + 0.1,
+      opacity: Math.random()
+    });
+  }
+}
+
+function animateStars() {
+  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  stars.forEach(star => {
+    star.x -= star.speed;
+    if (star.x < 0) star.x = window.innerWidth;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
+    ctx.fill();
+  });
+  requestAnimationFrame(animateStars);
+}
+
+window.addEventListener("resize", () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  initStars();
+});
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+initStars();
+animateStars();
+
+loadGame();
+updateInventory();
+updateCollection();
+renderShop();
+</script>
+</body>
+</html>
